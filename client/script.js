@@ -1,25 +1,25 @@
-const messageElement = document.querySelector('.message');
-const cellEllements = document.querySelectorAll(".cell")
+const messageElement = document.querySelector('.message'); //для изменения сообщения для игроков
+const cellEllements = document.querySelectorAll(".cell") //для обновления поля
 
 let field = ["", "", "", "", "", "", "", "", "",];
 let symbol = null;
 let turn = null;
-let IsGameActive = false;
+let IsGameActive = false; //блочит возможность ходить, если не его ход
 
 
-let ws = new WebSocket("ws://localhost:8080");
+let ws = new WebSocket("ws://localhost:8080"); //связывает сервер и клиентов
 
-ws.onmessage = message => {
-    const response = JSON.parse(message.data);
+ws.onmessage = message => { //Слушаем сервер
+    const response = JSON.parse(message.data); 
   
-    if (response.method === "join") {
+    if (response.method === "join") { //Новое соединение
       symbol = response.symbol;
       turn = response.turn;
       IsGameActive = symbol === turn;
       updateMessage();
     }  
 
-    if (response.method === "update") {
+    if (response.method === "update") { //После каждого хода обновляем
         field = response.field;
         turn = response.turn;
         IsGameActive = symbol === turn;
@@ -27,7 +27,7 @@ ws.onmessage = message => {
         updateMessage();
     }
 
-    if (response.method === "result") {
+    if (response.method === "result") { //Если выпала победа на сервере
         field = response.field;
         updateBoard();
         IsGameActive = false;
@@ -36,7 +36,7 @@ ws.onmessage = message => {
           }, 100);
     }
 
-    if (response.method === "left") {
+    if (response.method === "left") { //Если один из игроков ливнул
         IsGameActive = false;
         messageElement.textContent = response.message;
     }
@@ -44,10 +44,10 @@ ws.onmessage = message => {
 
 cellEllements.forEach((cell, index) => cell.addEventListener('click', (event) => {
     makeMove(event.target, index);
-  }));
+  })); //Если игрок кликнул по полю, то проеверяем makeMove
 
-function makeMove(cell, index){
-    if (!IsGameActive || field[index] != "") {
+function makeMove(cell, index){ //Игрок делает ход
+    if (!IsGameActive || field[index] != "") { //Только тот игрок, что ходит и по пустой клетке
         return;
     }
 
@@ -55,21 +55,21 @@ function makeMove(cell, index){
     cell.classList.add(symbol);
     field[index] = symbol;
 
-    ws.send(JSON.stringify({
+    ws.send(JSON.stringify({ //отправляем данные на сервер
         "method": "move",
         "symbol": symbol,
         "field": field,
     }));
 }
 
-function updateBoard() {
+function updateBoard() { //обновляет доску для клиентов
     cellEllements.forEach((cell, index) => {
       cell.classList.remove("X", "O");
       field[index] !== "" && cell.classList.add(field[index]);
     });
   }
 
-function updateMessage() {
+function updateMessage() { //Проверяет чей ход и сообщает это клиенту
     if (symbol === turn) {
       messageElement.textContent = "move";
     } else {

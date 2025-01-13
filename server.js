@@ -1,0 +1,130 @@
+const express = require("express");
+const path = require("path");
+const http = require("http");
+const WebSocket = require("ws");
+
+const app = express();
+app.use(express.static(path.join(__dirname, "..", "client")));
+app.listen(3000);
+
+const httpServer = http.createServer();
+const wss = new WebSocket.Server({ server: httpServer});
+httpServer.listen(8080);
+
+const clientConnection = {};
+const opponents = {};
+let clientIdWaitMatch = [];
+
+wss.on("connection", connection => {
+    const clientId = createClientId();
+    clientConnection[clientId] = connection;
+
+    matchClients(clientId);
+
+    connection.on("message", message => {
+        const result = JSON.parse(message);
+        if (result.method === "move"){
+            moveHandler(result, clientId);
+        }
+    });
+
+    connection.on("close", () => {
+        closeClient(connection, clientId);
+    });
+});
+
+function matchClients(clientId){
+    clientIdWaitMatch.push(clientId);
+
+    if (clientIdWaitMatch.length < 2) return;
+
+    const firstClientId = clientIdWaitMatch.shift();
+    const secondClientId = clientIdWaitMatch.shift();
+
+    opponents[firstClientId] = secondClientId;
+    opponents[secondClientId] = firstClientId;
+
+    clientConnection[firstClientId].send(JSON.stringify({
+        method: "join",
+        symbol: "X",
+        turn: "X",
+    }));
+
+    clientConnection[secondClientId].send(JSON.stringify({
+        method: "join",
+        symbol: "O",
+        turn: "X",
+    }));
+}
+
+function moveHandler(result, clientId){
+    const opponentClientId = opponents[clientId];
+
+    if (checkWin(result.field)) {
+        [clientId, opponentClientId].forEach(cId => {
+            clientConnection[cId].send(JSON.stringify({
+              method: "result",
+              message: `${result.symbol} win`,
+              field: result.field,
+            }));
+        });
+        return;
+    }
+
+    if (checkDraw(result.field)) {
+        [clientId, opponentClientId].forEach(cId => {
+            clientConnection[cId].send(JSON.stringify({
+              method: "result",
+              message: "Draw",
+              field: result.field,
+            }));
+        });
+        return;
+    }
+
+    [clientId, opponentClientId].forEach(cId => {
+        clientConnection[cId].send(JSON.stringify({
+          method: "update",
+          turn: result.symbol === "X" ? "O" : "X",
+          field: result.field,
+        }));
+    });    
+}
+
+function closeClient(connection, clientId) {
+    connection.close();
+    const isLeftUnmachedClient = clientIdWaitMatch.some(unmatchedClientId => unmatchedClientId === clientId);
+  
+    if (isLeftUnmachedClient) {
+        clientIdWaitMatch = clientIdWaitMatch.filter(unmatchedClientId => unmatchedClientId !== clientId);
+    } else {
+      const opponentClientId = opponents[clientId];
+      clientConnection[opponentClientId].send(JSON.stringify({
+        method: "left",
+        message: "opponent left",
+      }));
+    }
+}
+
+const winCombo = [
+    [0, 1, 2], [3, 4, 5], [6, 7, 8],
+    [0, 3, 6], [1, 4, 7], [2, 5, 8],
+    [0, 4, 8], [2, 4, 6] 
+];
+
+function checkWin(field){
+    return winCombo.some(combo => {
+        const [first, second, third] = combo;
+        return field[first] != "" && field[first] === field[second] && field[first] == field[third];
+    });
+}
+
+function checkDraw(field){
+    return field.every(symbol => symbol === "X" || symbol === "O");
+}
+
+let clientIdCounter = 0;
+function createClientId(){
+    clientIdCounter++;
+    return clientIdCounter;
+}
